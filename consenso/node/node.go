@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"time"
 )
 
 // Message ...
@@ -53,117 +54,98 @@ func handleRequeset(conn net.Conn) {
 
 	if err := dec.Decode(&message); err == nil {
 		switch message.Command {
-		case "generateNumber":
-			randomNumber := generateRandomNumber(2)
-
-			if randomNumber == 0 {
-				oneCounter++
-			} else {
-				secondCounter++
-			}
-
-			fmt.Println("Decidí", randomNumber)
-
-			for _, friend := range friendList {
-				fmt.Println(localPort, "sending", randomNumber, "to", friend)
-
-				sendMessageToHost(friend, Message{Command: "handleNumber", Number: randomNumber})
-			}
-
-		case "handleNumber":
-			if message.Number == 0 {
-				oneCounter++
-			} else {
-				secondCounter++
-			}
-
-			if oneCounter+secondCounter == len(friendList) {
-				if oneCounter > secondCounter {
-					fmt.Println("Gano el primero")
-				} else if oneCounter < secondCounter {
-					fmt.Println("Gano el segundo")
-				} else {
-					fmt.Println("Empate!")
-				}
-			}
 
 		case "hello":
-			// Le envio mi mista de amigos al nuevo host
-			resp := Message{Command: "hey", Hostname: localPort, List: friendList}
-			enc := json.NewEncoder(conn)
-
-			// A cada amigo mio, le presento el nuevo host
-			if err := enc.Encode(&resp); err == nil {
-
-				for _, friend := range friendList {
-					fmt.Println(localPort, "introduces", message.Hostname, "to", friend)
-
-					// Presentar nuevo amigo a mis amigos
-					sendMessageToHost(friend, Message{Command: "meet new friend", Hostname: message.Hostname})
-				}
-			}
-
-			// Agrego al nuevo host
-			friendList = append(friendList, message.Hostname)
-			fmt.Println("Friend list updated:", friendList)
+			helloRequestHandler(conn, message)
 
 		// Inicia el consenso
 		case "test consensus":
-			if rand.Intn(100)%2 == 0 {
-				decisions[localPort] = "atacar"
-			} else {
-				decisions[localPort] = "retirada"
-			}
-			fmt.Println(localPort, "decidio", decisions[localPort])
-
-			counter = 0
-
-			for _, friend := range friendList {
-				sendMessageToHost(friend, Message{Command: "decision", Decision: decisions[localPort]})
-			}
-
-			readyToListen <- true
+			testConsensushandler(message)
 
 		// Recibe una decision
 		case "decision":
-			<-readyToListen
-
-			decisions[message.Hostname] = message.Decision
-			counter++
-
-			if counter == len(friendList) {
-				attackCounter := 0
-				fallCounter := 0
-
-				for _, decision := range decisions {
-					if decision == "atacar" {
-						attackCounter++
-					} else {
-						fallCounter++
-					}
-				}
-
-				if attackCounter > fallCounter {
-					fmt.Println(localPort, "ATACAR!!!")
-				} else {
-					fmt.Println(localPort, "RETIRADA!!!")
-				}
-
-				end <- true
-			}
+			decisionHandler(message)
 
 		// Si se recibe un comando 'meet new friend'
 		case "meet new friend":
-			// Agrega un nuevo amigo de un host conocido
-			friendList = append(friendList, message.Hostname)
-			fmt.Println("Friend list updated:", friendList)
+			meetNewFriendHandler(message)
 
 		// Si se recibe un comando 'finish'
 		case "finish":
-			fmt.Println(localPort, "that's all folks")
-			end <- true
+			finishHandler()
 		}
 
+	}
+}
+
+/* ********** HANDLERS ********** */
+
+func helloRequestHandler(conn net.Conn, message Message) {
+	// Le envio mi mista de amigos al nuevo host
+	resp := Message{Command: "hey", Hostname: localPort, List: friendList}
+	enc := json.NewEncoder(conn)
+
+	// A cada amigo mio, le presento el nuevo host
+	if err := enc.Encode(&resp); err == nil {
+
+		for _, friend := range friendList {
+			fmt.Println(localPort, "introduces", message.Hostname, "to", friend)
+
+			// Presentar nuevo amigo a mis amigos
+			sendMessageToHost(friend, Message{Command: "meet new friend", Hostname: message.Hostname})
+		}
+	}
+
+	// Agrego al nuevo host
+	friendList = append(friendList, message.Hostname)
+	fmt.Println("Friend list updated:", friendList)
+}
+
+func testConsensushandler(message Message) {
+	if rand.Intn(100)%2 == 0 {
+		decisions[localPort] = "atacar"
+	} else {
+		decisions[localPort] = "retirada"
+	}
+	fmt.Println(localPort, "decidio", decisions[localPort])
+
+	counter = 0
+
+	for _, friend := range friendList {
+		sendMessageToHost(friend, Message{Command: "decision", Hostname: localPort, Decision: decisions[localPort]})
+	}
+
+	readyToListen <- true
+}
+
+func decisionHandler(message Message) {
+	<-readyToListen
+
+	decisions[message.Hostname] = message.Decision
+	counter++
+
+	if counter == len(friendList) {
+		attackCounter := 0
+		fallCounter := 0
+
+		for _, decision := range decisions {
+			if decision == "atacar" {
+				attackCounter++
+			} else {
+				fallCounter++
+			}
+		}
+
+		if attackCounter > fallCounter {
+			fmt.Println(localPort, "ATACAR!!!")
+		} else {
+			fmt.Println(localPort, "RETIRADA!!!")
+		}
+
+		end <- true
+	} else {
+		// Se debe aceptar el siguiente request
+		readyToListen <- true
 	}
 }
 
@@ -193,9 +175,24 @@ func sendMessageToHost(port string, message Message) {
 	}
 }
 
+func meetNewFriendHandler(message Message) {
+	// Agrega un nuevo amigo de un host conocido
+	friendList = append(friendList, message.Hostname)
+	fmt.Println("Friend list updated:", friendList)
+}
+
+func finishHandler() {
+	fmt.Println(localPort, "that's all folks")
+	end <- true
+}
+
 func main() {
 	end = make(chan bool)
+	readyToListen = make(chan bool)
+	decisions = make(map[string]string)
 	localPort = os.Args[1]
+
+	rand.Seed(time.Now().UTC().UnixNano())
 
 	go startServer()
 
