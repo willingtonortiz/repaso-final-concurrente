@@ -42,10 +42,6 @@ func startServer() {
 	}
 }
 
-func generateRandomNumber(max int) int {
-	return rand.Intn(max)
-}
-
 // Recibe cualquier request
 func handleRequeset(conn net.Conn) {
 	defer conn.Close()
@@ -185,6 +181,14 @@ func finishHandler() {
 	fmt.Println(localPort, "that's all folks")
 	end <- true
 }
+
+/* ********** HELPER FUNCTIONS ********** */
+
+func generateRandomNumber(max int) int {
+	return rand.Intn(max)
+}
+
+/* ********** MAIN ********** */
 
 func main() {
 	end = make(chan bool)
