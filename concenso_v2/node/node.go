@@ -6,21 +6,15 @@ import (
 	"math/rand"
 	"net"
 	"os"
-	"sync"
 	"time"
 )
-
-/*
-[X] HACER QUE TODOS SE COMUNIQUEN
-[ ] HACER QUE TODOS GENEREN UN NUMERO ALEATORIO Y SE LO COMPARTAN
-*/
 
 // Message ...
 type Message struct {
 	Command  string   `json:"command"`
 	Hostname string   `json:"hostName"`
 	List     []string `json:"list"`
-	Number   int      `json:"number"`
+	Option   string   `json:"option"`
 }
 
 // Variables globales
@@ -29,13 +23,9 @@ var localPort string
 var friendList []string
 
 // Variables para el algoritmo
-var hostNumbers map[string]int
-var mutex = &sync.Mutex{}
-
-/* ********** HELPER FUNCTIONS ********** */
-func generateRandomNumber(max int) int {
-	return rand.Intn(max)
-}
+var options map[string]string
+var attackCounter int
+var backOutCounter int
 
 // Ejecuta el servidor y acepta requests
 func startServer() {
@@ -69,98 +59,61 @@ func handleRequeset(conn net.Conn) {
 		case "finish":
 			finishHandler()
 
-		case "start agrawala":
-			startAgrawalaHandler(message)
+		case "start concensus":
+			startConcensusHandler()
 
-		case "save number":
-			saveNumberHandler(message)
+		case "process concensus":
+			processConcensusHandler(message)
 
-		case "execute":
-			executeHandler(message)
 		}
+
 	}
 }
 
 /* ********** HANDLERS ********** */
 
-func executeHandler(message Message) {
-	minNumber := hostNumbers[localPort]
-	nextHost := ""
-	posibleNumber := 9999999999
+func processConcensusHandler(message Message) {
+	options[message.Hostname] = message.Option
 
-	for host, num := range hostNumbers {
-		if minNumber < num {
-			if num < posibleNumber {
-				posibleNumber = num
-				nextHost = host
-			}
-		}
-	}
-
-	if nextHost == "" {
-		fmt.Println("Soy el ultimo")
-
-		for _, friend := range friendList {
-			fmt.Println(localPort, "sent finish to", friend)
-
-			sendMessageToHost(friend, Message{Command: "finish"})
-		}
-
-		finishHandler()
-
-		return
-	}
-
-	sendMessageToHost(nextHost, Message{Command: "execute"})
-}
-
-func saveNumberHandler(message Message) {
-	mutex.Lock()
-
-	hostNumbers[message.Hostname] = message.Number
-
-	if len(hostNumbers) == len(friendList)+1 {
-
-		minNumber := 999999
-		prevNumber := 999999
-		prevHost := ""
-		nextHost := ""
-
-		for host, num := range hostNumbers {
-			if minNumber > num {
-				prevHost = nextHost
-				nextHost = host
-				minNumber = num
+	if len(options) == len(friendList)+1 {
+		for _, val := range options {
+			if val == "ATACAR" {
+				attackCounter++
 			} else {
-				if prevNumber > num {
-					prevNumber = num
-					prevHost = host
-				}
+				backOutCounter++
 			}
 		}
 
-		if minNumber == hostNumbers[localPort] {
-			fmt.Println("Soy el primero", localPort, "->", prevHost)
-
-			sendMessageToHost(prevHost, Message{Command: "execute"})
+		if attackCounter > backOutCounter {
+			fmt.Println("ATAQUEMOS")
+		} else {
+			fmt.Println("RETIREMONOS")
 		}
-	}
+		fmt.Println()
 
-	mutex.Lock()
+		attackCounter = 0
+		backOutCounter = 0
+
+		options = make(map[string]string)
+	}
 }
 
-func startAgrawalaHandler(message Message) {
-	randomNumber := rand.Int() % 9999
-	hostNumbers[localPort] = randomNumber
+func startConcensusHandler() {
+	option := ""
 
-	fmt.Println(localPort, "mi numero es", randomNumber)
+	if rand.Intn(2)%2 == 0 {
+		option = "ATACAR"
+	} else {
+		option = "RETIRARSE"
+	}
+
+	options[localPort] = option
+	fmt.Println(localPort, "decidio", option)
 
 	for _, friend := range friendList {
-		fmt.Println(localPort, "sent", "save number", "to", friend)
 
-		sendMessageToHost(friend, Message{Command: "save number", Number: randomNumber, Hostname: localPort})
+		sendMessageToHost(friend, Message{Command: "process concensus", Option: option, Hostname: localPort})
 	}
-
 }
 
 func helloRequestHandler(conn net.Conn, message Message) {
@@ -221,6 +174,12 @@ func finishHandler() {
 	end <- true
 }
 
+/* ********** HELPER FUNCTIONS ********** */
+
+func generateRandomNumber(max int) int {
+	return rand.Intn(max)
+}
+
 /* ********** MAIN ********** */
 
 func main() {
@@ -229,7 +188,7 @@ func main() {
 	localPort = os.Args[1]
 
 	// Setup
-	hostNumbers = make(map[string]int)
+	options = make(map[string]string)
 
 	go startServer()
 

@@ -6,14 +6,8 @@ import (
 	"math/rand"
 	"net"
 	"os"
-	"sync"
 	"time"
 )
-
-/*
-[X] HACER QUE TODOS SE COMUNIQUEN
-[ ] HACER QUE TODOS GENEREN UN NUMERO ALEATORIO Y SE LO COMPARTAN
-*/
 
 // Message ...
 type Message struct {
@@ -29,13 +23,7 @@ var localPort string
 var friendList []string
 
 // Variables para el algoritmo
-var hostNumbers map[string]int
-var mutex = &sync.Mutex{}
-
-/* ********** HELPER FUNCTIONS ********** */
-func generateRandomNumber(max int) int {
-	return rand.Intn(max)
-}
+var nextHost string
 
 // Ejecuta el servidor y acepta requests
 func startServer() {
@@ -69,99 +57,46 @@ func handleRequeset(conn net.Conn) {
 		case "finish":
 			finishHandler()
 
-		case "start agrawala":
-			startAgrawalaHandler(message)
+		case "start hotpotato":
+			startHotPotatoHandler()
 
-		case "save number":
-			saveNumberHandler(message)
-
-		case "execute":
-			executeHandler(message)
+		case "process hotpotato":
+			processHotPotatoHandler(message)
 		}
+
 	}
 }
 
-/* ********** HANDLERS ********** */
+func startHotPotatoHandler() {
+	randomNumber := 20
+	// randomNumber := rand.Intn(10)
 
-func executeHandler(message Message) {
-	minNumber := hostNumbers[localPort]
-	nextHost := ""
-	posibleNumber := 9999999999
+	fmt.Println("Elegi el numero", randomNumber)
 
-	for host, num := range hostNumbers {
-		if minNumber < num {
-			if num < posibleNumber {
-				posibleNumber = num
-				nextHost = host
-			}
-		}
-	}
+	sendMessageToHost(nextHost, Message{Command: "process hotpotato", Number: randomNumber})
+}
 
-	if nextHost == "" {
-		fmt.Println("Soy el ultimo")
+func processHotPotatoHandler(message Message) {
+	number := message.Number
 
-		for _, friend := range friendList {
-			fmt.Println(localPort, "sent finish to", friend)
+	fmt.Println(localPort, "recibi", number)
+	fmt.Println()
 
-			sendMessageToHost(friend, Message{Command: "finish"})
-		}
+	if number == 0 {
+		fmt.Println("MORI HORRIBLEMENTE")
+		fmt.Println("MORI HORRIBLEMENTE")
+		fmt.Println("MORI HORRIBLEMENTE")
 
-		finishHandler()
-
+		// Mandar el finish
 		return
 	}
 
-	sendMessageToHost(nextHost, Message{Command: "execute"})
+	// fmt.Println("Se lo pase a ", nextHost)
+
+	sendMessageToHost(nextHost, Message{Command: "process hotpotato", Number: number - 1})
 }
 
-func saveNumberHandler(message Message) {
-	mutex.Lock()
-
-	hostNumbers[message.Hostname] = message.Number
-
-	if len(hostNumbers) == len(friendList)+1 {
-
-		minNumber := 999999
-		prevNumber := 999999
-		prevHost := ""
-		nextHost := ""
-
-		for host, num := range hostNumbers {
-			if minNumber > num {
-				prevHost = nextHost
-				nextHost = host
-				minNumber = num
-			} else {
-				if prevNumber > num {
-					prevNumber = num
-					prevHost = host
-				}
-			}
-		}
-
-		if minNumber == hostNumbers[localPort] {
-			fmt.Println("Soy el primero", localPort, "->", prevHost)
-
-			sendMessageToHost(prevHost, Message{Command: "execute"})
-		}
-	}
-
-	mutex.Lock()
-}
-
-func startAgrawalaHandler(message Message) {
-	randomNumber := rand.Int() % 9999
-	hostNumbers[localPort] = randomNumber
-
-	fmt.Println(localPort, "mi numero es", randomNumber)
-
-	for _, friend := range friendList {
-		fmt.Println(localPort, "sent", "save number", "to", friend)
-
-		sendMessageToHost(friend, Message{Command: "save number", Number: randomNumber, Hostname: localPort})
-	}
-
-}
+/* ********** HANDLERS ********** */
 
 func helloRequestHandler(conn net.Conn, message Message) {
 	// Le envio mi mista de amigos al nuevo host
@@ -193,7 +128,7 @@ func sendMessageToHost(port string, message Message) {
 	enc := json.NewEncoder(conn)
 
 	if err := enc.Encode(&message); err == nil {
-		fmt.Println("Sending", "'"+message.Command+"'", "to", port)
+		// fmt.Println("Sending", "'"+message.Command+"'", "to", port)
 
 		// Si el comando es hello, entonces se espera recibir una respuesta
 		// con la lista de nodos en la red
@@ -221,6 +156,12 @@ func finishHandler() {
 	end <- true
 }
 
+/* ********** HELPER FUNCTIONS ********** */
+
+func generateRandomNumber(max int) int {
+	return rand.Intn(max)
+}
+
 /* ********** MAIN ********** */
 
 func main() {
@@ -229,7 +170,6 @@ func main() {
 	localPort = os.Args[1]
 
 	// Setup
-	hostNumbers = make(map[string]int)
 
 	go startServer()
 
@@ -238,7 +178,10 @@ func main() {
 		knownPort := os.Args[2]
 		friendList = append(friendList, knownPort)
 
-		sendMessageToHost(knownPort, Message{Command: "hello", Hostname: localPort})
+		// Para hot potato
+		nextHost = knownPort
+
+		// sendMessageToHost(knownPort, Message{Command: "hello", Hostname: localPort})
 	}
 
 	<-end
